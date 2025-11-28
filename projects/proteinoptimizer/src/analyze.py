@@ -275,9 +275,9 @@ def main():
     agg = agg.sort_values("family")
 
     # Round for display
-    display = agg[["family", "Top_10"]].copy()
+    display = agg[["family", "Top_1", "Top_5", "Top_10"]].copy()
     display = display.rename(columns={"family": "Model"})
-    display = display.round({"Top_10": 4})
+    display = display.round({"Top_1": 4, "Top_5": 4, "Top_10": 4})
 
     # Print exactly one table
     try:

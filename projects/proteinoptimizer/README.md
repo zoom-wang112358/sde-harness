@@ -99,14 +99,14 @@ python src/analyze.py --glob "./results/*.json" --higher-is-better 1
 This will ouput a table contains result summary.
 
 ## Results
-| Model             |   Top_10 |
+| Model             |   Top_1  |
 |:------------------|---------:|
-| Baseline          |   0.6564 |
-| GPT5-mini         |   0.6821 |
-| DeepSeek          |   0.8346 |
-| Claude-Sonnet-4-5 |   0.6427 |
-| GPT-5             |   0.7842 |
-| GPT-5-chat-latest |   0.7438 |
+| Baseline          |   0.7514 |
+| GPT5-mini         |   0.7867 |
+| DeepSeek          |   0.8713 |
+| Claude-Sonnet-4-5 |   0.7759 |
+| GPT-5             |   0.8561 |
+| GPT-5-chat-latest |   0.8582 |
 ---
 ## Code overview
 ```

@@ -1,62 +1,209 @@
-# MolLEO
+# MolLEO - Restructured with SDE Harness
 
-[arXiv] [Efficient Evolutionary Search Over Chemical Space with Large Language Models](https://arxiv.org/abs/2406.16976)
+This is the restructured version of MolLEO (Molecular Language-Enhanced Evolutionary Optimization) that fully integrates with the SDE Harness framework.
 
-[ICLR 2025] [Efficient Evolutionary Search Over Chemical Space with Large Language Models](https://openreview.net/forum?id=awWiNvQwf3)
+## Key Changes from Original
 
-[Website] [MolLEO Project](https://molleo.github.io/)
+1. **SDE Harness Integration**
+   - Uses `Generation` class for all LLM communications
+   - Extends `Oracle` class for molecular property evaluation
+   - Uses `Prompt` class for structured prompt management
+   - Compatible with `Workflow` for complex pipelines
 
-## About
+2. **Improved Architecture**
+   - Modular structure with clear separation of concerns
+   - Self-contained genetic algorithm operations in `/src/ga/`
+   - Integration-ready Generation class for SDE Workflow
+   - Separate modes for single and multi-objective optimization
 
-MolLEO is an LLM-augmented evlotuionary algorithm for molecular discovery!
-This project is refactored to adapt `sde-harness` framework.
+3. **Enhanced Features**
+   - Context-aware LLM mutations using population information
+   - Support for multiple LLM providers via YAML configuration
+   - Unified error handling and retry logic
+   - Integration with Weave for experiment tracking
+   - Self-contained GA operations (no external dependencies)
 
-![image](images/README/molleo_overview.gif)
+## Usage
 
-## Setups
-You need to get an OpenAI API key for GPT-4. BioT5 is an open-source language model which can work on either GPU or CPU. Currently, this code repo does not support MolLEO(MOLSTM), but we will update soon.
-
-### Package Installation
-```bash
-conda activate sde-harness
-conda install pytorch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 pytorch-cuda=12.1 -c pytorch -c nvidia
-pip install PyTDC 
-pip install PyYAML
-pip install rdkit
-pip install transformers
-pip install sentencepiece
-pip install selfies
-```
-
-Then we can activate conda via following command. 
-```bash
-conda activate molleo 
-```
-
-
-### Experiments
-The experiments are conducted on the following categories: `single obejective optimization` and `multi objective optimization`.
-
-To run experiments on single objective optimization task:
+### Command Line Interface
 
 ```bash
-cd single_objective
-# BioT5 on jnk3 task
-python run.py molleo --mol_lm BioT5 --oracles jnk3 --seed 1 2 3
-# GPT-4 on gsk3b task
-python run.py molleo --mol_lm GPT-4 --oracles gsk3b --seed 1 2 3
-```
-To run experiments on multi objective optimization task:
+# Single objective optimization with LLM
+python cli.py single --oracle qed --model openai/gpt-4o-2024-08-06 --generations 20
 
-```bash
-cd multi_objective
-# objective summation on task 1
-python run.py molleo_multi --mol_lm BioT5 --min_obj sa --max_obj jnk3 qed --seed 1 2 3
-# pareto optimal set selection on task 2
-python run.py molleo_multi_pareto --mol_lm GPT-4 --min_obj sa --max_obj gsk3b qed --seed 1 2 3
-# pareto optimal set selection on task 3
-python run.py molleo_multi_pareto --mol_lm GPT-4 --min_obj sa gsk3b drd2 --max_obj jnk3 qed --seed 1 2 3
+# Single objective optimization without LLM (random mutations only)
+python cli.py single --oracle qed --model none --generations 20
+
+# Multi-objective optimization
+python cli.py multi --max-obj drd2 qed --min-obj sa --model openai/gpt-4o-2024-08-06
+
+# Pareto optimization
+python cli.py multi-pareto --max-obj gsk3b qed --min-obj sa --model openai/gpt-4o-2024-08-06
 ```
+
+### Python API
+
+```python
+from src.core import MolLEOOptimizer
+from src.oracles import TDCOracle
+
+# Create oracle
+oracle = TDCOracle("qed")
+
+# Create optimizer
+optimizer = MolLEOOptimizer(
+    oracle=oracle,
+    population_size=100,
+    model_name="openai/gpt-4o-2024-08-06",
+    use_llm_mutations=True
+)
+
+# Run optimization
+results = optimizer.optimize(
+    starting_smiles=["CCO", "CCN", "CCC"],
+    num_generations=20
+)
+```
+
+### Integration with SDE Workflow
+
+```python
+from sde_harness.core import Generation, Workflow, Oracle, Prompt
+from src.core import MolLEOOptimizer
+from src.oracles import TDCOracle
+from src.generation import MolLEOGeneration
+
+# Create oracle
+oracle = TDCOracle("sa")
+
+# Create optimizer
+optimizer = MolLEOOptimizer(
+    oracle=oracle,
+    population_size=10,
+    offspring_size=10,
+    mutation_rate=0.05,
+    model_name="openai/gpt-4o-2024-08-06",
+    use_llm_mutations=True
+)
+
+# Create Generation instance for workflow
+generation = MolLEOGeneration(
+    model_name="openai/gpt-4o-2024-08-06"
+)
+
+# Create workflow
+workflow = Workflow(
+    generator=generation,
+    oracle=oracle,
+    max_iterations=2,
+    enable_history_in_prompts=True
+)
+
+# Run workflow with custom prompts
+workflow_results = workflow.run_sync(
+    prompt=analog_generation_prompt,
+    reference="Generate molecular analogs",
+    gen_args={
+        "model": "openai/gpt-4o-2024-08-06",
+        "max_tokens": 500,
+        "temperature": 0.8,
+    }
+)
+```
+
+## Examples
+
+### Main Examples
+- `example_usage.py` - Comprehensive examples including:
+  - Single-objective optimization
+  - Multi-objective optimization
+  - Direct SDE harness integration with Workflow
+
+### Test Suite (`/tests/`)
+- `example_no_llm.py` - Example using only random mutations
+- `example_with_llm.py` - Example with LLM mutations
+- `example_comprehensive.py` - Comprehensive test scenarios
+- `example_results.py` - Example usage on single objective optimization tasks
+
+## Configuration
+
+The system uses the standard SDE harness configuration in the **root directory** of `sde-harness`:
+- `models.yaml` - Model configurations
+- `credentials.yaml` - API credentials
+
+## Project Structure
+
+```
+molleo/
+├── src/                    # Main source code
+│   ├── core/              # Core components
+│   │   ├── molleo_optimizer.py  # Main optimizer class
+│   │   └── prompts.py          # Prompt templates
+│   ├── ga/                # Genetic algorithm operations
+│   │   ├── mutations.py   # Molecular mutations
+│   │   └── crossover.py   # Molecular crossover
+│   ├── generation.py      # SDE harness Generation class
+│   ├── modes/            # Optimization modes
+│   │   ├── single_objective.py
+│   │   └── multi_objective.py
+│   ├── oracles/          # Property evaluation
+│   │   ├── base.py       # Base oracle class
+│   │   └── tdc_oracles.py # TDC oracle implementations
+│   └── utils/            # Utilities
+│       ├── evolutionary_ops.py
+│       └── mol_utils.py
+├── tests/                # Test suite
+├── cli.py               # CLI interface
+├── example_usage.py     # Usage examples
+└── _archive/            # Old implementation (reference only)
+```
+## Results
+
+Comparison of different methods on molecule optimization:
+
+| Method | jnk3 AUC Top 10 | jnk3 Avg Top 10 | gsk3β AUC Top 10 | gsk3β Avg Top 10 |
+|---|---:|---:|---:|---:|
+| Graph GA | 0.548 | 0.890 | 0.779 | 0.945 |
+| REINVENT | 0.794 | 0.912 | 0.868 | 0.978 |
+| gpt-4o | 0.796 | 0.932 | 0.857 | 0.972 |
+| gpt-5-chat | 0.717 | 0.803 | 0.832 | 0.887 |
+| gpt-5 | 0.695 | 0.752 | 0.822 | 0.942 |
+| claude-sonnet-4.5 | 0.865 | 0.935 | 0.981 | 1.00 |
+| deepseek-R1 | 0.749 | 0.932 | 0.849 | 0.893 |
+
+
+## Key Improvements in Restructured Version
+
+1. **Unified Model Parameter**: Replaced `--mol-lm` with `--model` for consistency
+   - Use any model from `models.yaml`: `--model openai/gpt-4o-2024-08-06`
+   - Disable LLM for random mutations: `--model none`
+
+2. **Self-Contained GA Operations**: 
+   - Genetic algorithm code moved to `/src/ga/`
+   - No dependencies on old directory structure
+   - Clean separation of concerns
+
+3. **Better Error Handling**:
+   - Graceful fallback when TDC data loading fails
+   - Proper exception handling in mutations
+   - Clear error messages for missing configurations
+
+4. **Enhanced Testing**:
+   - Comprehensive test suite in `/tests/`
+   - Examples for both LLM and non-LLM modes
+   - Oracle evaluation tests
+
+## Dependencies
+
+See `requirements.txt` for MolLEO-specific dependencies. The parent `requirements.txt` contains core SDE harness dependencies.
+
+## Migration from Original
+
+If you're migrating from the original MolLEO:
+1. Update CLI commands to use `--model` instead of `--mol-lm`
+2. Use full model names (e.g., `openai/gpt-4o-2024-08-06`) instead of shortcuts
+3. All old code is preserved in `/_archive/` for reference
+4. The new structure is fully backward-compatible with the same optimization algorithms
 
 ## Citation
 If you find our work helpful, please consider citing our paper:

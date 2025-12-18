@@ -1,4 +1,0 @@
-python tests/generate_table.py --model deepseek/deepseek-reasoner --oracle sitagliptin_mpo --population_size 120 --offspring_size 70 --seed 0 --max_oracle_calls 10000 --patience 5 --output_dir ./test_results
-python tests/generate_table.py --model openai/gpt-5 --oracle sitagliptin_mpo --population_size 120 --offspring_size 70 --seed 0 --max_oracle_calls 10000 --patience 5 --output_dir ./test_results
-python tests/generate_table.py --model openai/gpt-5-chat-latest --oracle sitagliptin_mpo --population_size 120 --offspring_size 70 --seed 0 --max_oracle_calls 10000 --patience 5 --output_dir ./test_results
-python tests/generate_table.py --model anthropic/claude-sonnet-4-5 --oracle sitagliptin_mpo --population_size 120 --offspring_size 70 --seed 0 --max_oracle_calls 10000 --patience 5 --output_dir ./test_results

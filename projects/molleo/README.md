@@ -1,6 +1,7 @@
 # MolLEO - Restructured with SDE Harness
 
 This is the restructured version of MolLEO (Molecular Language-Enhanced Evolutionary Optimization) that fully integrates with the SDE Harness framework.
+[ICLR 2025] Efficient Evolutionary Search Over Chemical Space with Large Language Models](https://arxiv.org/abs/2406.16976)
 
 ## Key Changes from Original
 

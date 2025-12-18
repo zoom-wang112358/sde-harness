@@ -7,7 +7,7 @@ import numpy as np
 from rdkit import Chem
 import sys
 import os
-
+from concurrent.futures import ThreadPoolExecutor, wait
 # Add SDE harness to path
 project_root = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -24,7 +24,39 @@ from ..utils import (
 )
 from ..oracles import MolecularOracle
 from .prompts import MolecularPrompts
+from openai import OpenAI
 
+def topk_auc_from_history(history, top_k, finish, freq_log, max_oracle_calls):
+
+    n = len(history)
+    if n == 0 or max_oracle_calls == 0:
+        return 0.0
+
+    ordered = sorted(history, key=lambda x: x["call_count"])
+
+    area = 0.0
+    prev = 0.0
+    called = 0
+
+    upper = min(n, max_oracle_calls)
+    for idx in range(freq_log, upper, freq_log):
+        prefix = ordered[:idx]
+        top_now = sorted(prefix, key=lambda x: x["score"], reverse=True)[:top_k]
+        top_k_now = np.mean([item["score"] for item in top_now])
+
+        area += freq_log * (top_k_now + prev) / 2
+        prev = top_k_now
+        called = idx
+
+    top_all = sorted(ordered, key=lambda x: x["score"], reverse=True)[:top_k]
+    top_k_now = np.mean([item["score"] for item in top_all])
+
+    area += (n - called) * (top_k_now + prev) / 2
+
+    if finish and n < max_oracle_calls:
+        area += (max_oracle_calls - n) * top_k_now
+
+    return area / max_oracle_calls
 
 class MolLEOOptimizer:
     """
@@ -34,11 +66,17 @@ class MolLEOOptimizer:
     
     def __init__(self, 
                  oracle: MolecularOracle,
+                 oracle_name: str,
                  population_size: int = 100,
                  offspring_size: int = 200,
                  mutation_rate: float = 0.01,
                  n_jobs: int = -1,
                  model_name: str = "openai/gpt-4o-2024-08-06",
+                 freq_log: int = 100,
+                 max_oracle_calls: int = 10000,
+                 patience: int = 5,
+                 seed: int = 42,
+                 output_dir: Optional[str] = None,
                  use_llm_mutations: bool = True):
         """
         Initialize MolLEO optimizer
@@ -53,11 +91,19 @@ class MolLEOOptimizer:
             use_llm_mutations: Whether to use LLM for guided mutations
         """
         self.oracle = oracle
+        self.oracle_name = oracle_name
         self.population_size = population_size
         self.offspring_size = offspring_size
         self.mutation_rate = mutation_rate
         self.n_jobs = n_jobs
         self.model_name = model_name
+        self.freq_log = freq_log
+        self.max_oracle_calls = max_oracle_calls
+        self.patience = patience
+        self.seed = seed
+        self.output_dir = output_dir
+        random.seed(seed)
+        np.random.seed(seed)
         self.use_llm_mutations = use_llm_mutations
         
         # Initialize generation model
@@ -104,9 +150,9 @@ class MolLEOOptimizer:
                     self.population_scores.append(score)
                     self.all_results[mutant_smiles] = score
                     
-    def _llm_mutate(self, parent_mol: Chem.Mol) -> Optional[Chem.Mol]:
+    def _llm_mutate(self, parent_mols, parent_scores, mutation_rate) -> Optional[Chem.Mol]:
         """Use LLM to generate molecular mutations with context"""
-        parent_smiles = mol_to_smiles(parent_mol)
+        parent_smiles = [mol_to_smiles(mol) for mol in parent_mols]
         
         # If population is not yet established, use simple mutation prompt
         if not self.population_scores:
@@ -116,11 +162,11 @@ class MolLEOOptimizer:
             )
         else:
             # Get top molecules from current population for context
-            top_indices = np.argsort(self.population_scores)[-5:][::-1]
+            #top_indices = np.argsort(self.population_scores)[-5:][::-1]
             context_molecules = []
-            for idx in top_indices:
-                mol = self.population_mol[idx]
-                score = self.population_scores[idx]
+            for idx in range(len(parent_mols)):
+                mol = parent_mols[idx]
+                score = parent_scores[idx]
                 smiles = mol_to_smiles(mol)
                 context_molecules.append(f"[{smiles}, {score:.4f}]")
             
@@ -131,54 +177,84 @@ class MolLEOOptimizer:
             prompt = MolecularPrompts.get_optimization_prompt(
                 molecule_data=molecule_context,
                 target_property=self.oracle.property_name,
-                best_score=max(self.population_scores),
-                num_molecules=5
             )
+            prompt=prompt.build()
+        for i in range(3):  # Try up to 3 times
+            try:
+                system_message = "You are a chemical specialist who can analyze and optimize molecules."
+                messages = [
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt}
+                ]
+                # Generate mutations using SDE harness Generation
+                if self.model_name == 'openai/gpt-5':
+                    
+                    response = self.generator.generate(
+                        messages=messages,
+                        model_name=self.model_name,
+                        temperature=1,
+                        reasoning_effort="high",
+                        max_tokens=32000,
+                    )
+                    
+
+                elif self.model_name == 'openai/gpt-5-chat-latest':
+                    response = self.generator.generate(
+                        messages=messages,
+                        model_name=self.model_name,
+                        temperature=1,
+                        max_tokens=16384,
+                    )
+                else:
+                    response = self.generator.generate(
+                        messages=messages,
+                        model_name=self.model_name,
+                        temperature=0.8,
+                        max_tokens=8192,
+                    )
+                #print(response)
+                #print(f"LLM Mutation Response: {response['text'].strip()}")
+                # Parse response - handle various formats
+                if isinstance(response, str):
+                    text = response.strip()
+                else:
+                    text = response['text'].strip()
+                
+                # Try to extract SMILES from various formats
+                crossover_smiles = []
+                
+                # Check for boxed format (like original GPT4 implementation)
+                proposed_smiles = re.search(r'<box>(.*?)</box>', text, re.DOTALL).group(1)
+                proposed_smiles = sanitize_smiles(proposed_smiles)
+                assert proposed_smiles is not None
+                print('LLM proposed SMILES:', proposed_smiles)
+                mol = Chem.MolFromSmiles(proposed_smiles, sanitize=True)
+                if mol is not None:
+                    return mol
+                else:
+                    print(f"Invalid SMILES from LLM: {proposed_smiles}")
+                    continue    
+                            
+            except Exception as e:
+                print(f"LLM mutation failed: {e}")
+                continue
         
         try:
-            # Generate mutations using SDE harness Generation
-            response = self.generator.generate(
-                prompt=prompt.build(),
-                model_name=self.model_name,
-                temperature=0.8,
-                max_tokens=300
-            )
-            
-            # Parse response - handle various formats
-            text = response['text'].strip()
-            
-            # Try to extract SMILES from various formats
-            mutation_smiles = []
-            
-            # Check for boxed format (like original GPT4 implementation)
-            boxed_matches = re.findall(r'\\box\{(.*?)\}', text)
-            if boxed_matches:
-                mutation_smiles.extend(boxed_matches)
-            
-            # Also check for plain SMILES on separate lines
-            lines = text.split('\n')
-            for line in lines:
-                line = line.strip()
-                # Basic SMILES pattern check
-                if line and not line.startswith('#') and not ':' in line:
-                    # Try to validate it's a SMILES
-                    if smiles_to_mol(line) is not None:
-                        mutation_smiles.append(line)
-            
-            # Try each mutation
-            for smiles in mutation_smiles:
-                smiles = smiles.strip()
-                if smiles:
-                    mol = smiles_to_mol(smiles)
-                    if mol is not None:
-                        return mol
-                        
+            new_child = self._random_crossover(parent_mols[0], parent_mols[1])
+            if new_child is not None:
+                new_child = self._random_mutate(new_child)
+            print(f"GA New child SMILES: {Chem.MolToSmiles(new_child)}")
         except Exception as e:
-            print(f"LLM mutation failed: {e}")
-            
+            print(f"{type(e).__name__} {e}")
+            new_child = parent_mol[0]    
         # Fallback to random mutation
-        return self._random_mutate(parent_mol)
-        
+        return new_child
+
+    def _random_crossover(self, mol1: Chem.Mol, mol2: Chem.Mol) -> Optional[Chem.Mol]:
+        """Random molecular mutation using original MolLEO operations"""
+        from src.ga import crossover as co
+        # Use original random mutation
+        return co.crossover(mol1, mol2)  
     def _random_mutate(self, parent_mol: Chem.Mol) -> Optional[Chem.Mol]:
         """Random molecular mutation using original MolLEO operations"""
         from src.ga import mutations as mu
@@ -201,33 +277,29 @@ class MolLEOOptimizer:
         offspring_scores = []
         
         successful_reproductions = 0
-        
-        for i in range(self.offspring_size // 2):
-            
-            # Reproduce - always pass self as mol_lm, it will handle LLM vs random
-            child1, child2 = reproduce(
-                mating_pool, 
-                self.mutation_rate,
-                mol_lm=self if self.use_llm_mutations else None
-            )
-            
-            # Evaluate offspring
-            for child in [child1, child2]:
-                if child is not None:
-                    successful_reproductions += 1
-                    child_smiles = mol_to_smiles(child)
-                    
-                    # Check if already evaluated
-                    if child_smiles in self.all_results:
-                        score = self.all_results[child_smiles]
-                    else:
-                        score = self.oracle.evaluate_molecule(child_smiles)
-                        self.all_results[child_smiles] = score
-                        
-                    offspring_mol.append(child)
-                    offspring_scores.append(score)
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(reproduce, mating_pool, self.mutation_rate, mol_lm=self) for _ in range(self.offspring_size)]
+            generated_mol = [future.result() for future in futures]
+
+        for mol in generated_mol:
+            if mol is not None:
+                successful_reproductions += 1
+                child_smiles = mol_to_smiles(mol)
+                
+                # Check if already evaluated
+                if child_smiles in self.all_results:
+                    score = self.all_results[child_smiles]
+                    continue
                 else:
-                    print(f"DEBUG: Child is None")
+                    if self.oracle.in_history(child_smiles):
+                        continue
+                    # Evaluate new molecule
+                    score = self.oracle.evaluate_molecule(child_smiles)
+                    self.all_results[child_smiles] = score
+                offspring_mol.append(mol)
+                offspring_scores.append(score)
+            else:
+                print(f"DEBUG: Child is None")
         
         print(f"DEBUG: Successful reproductions: {successful_reproductions}")
         print(f"DEBUG: Offspring generated: {len(offspring_mol)}")
@@ -260,7 +332,12 @@ class MolLEOOptimizer:
         # Track best molecules
         best_scores = []
         best_molecules = []
-        
+        patience = 0
+        no_improve_gen = 0
+        if len(self.population_scores) > 100:
+            old_score = np.mean(self.population_scores)
+        else:
+            old_score = 0
         # Evolution loop
         for gen in range(num_generations):
             # Evolve
@@ -274,30 +351,83 @@ class MolLEOOptimizer:
             
             best_scores.append(best_score)
             best_molecules.append(best_smiles)
-            
-            print(f"Generation {gen+1}: Best score = {best_score:.4f}, "
-                  f"Oracle calls = {self.oracle.call_count}")
+            top_k_auc = topk_auc_from_history(self.oracle.history, top_k=10, finish=True, freq_log=self.freq_log, max_oracle_calls=self.max_oracle_calls)
+            print(f"Generation {gen+1}: Best score = {best_score:.4f}, Top-10 AUC = {top_k_auc:.4f}, "
+                f"Oracle calls = {self.oracle.call_count}")
+            # Early stopping based on oracle calls
+            if self.oracle.call_count >= self.max_oracle_calls:
+                print(f"Reached max oracle calls: {self.oracle.call_count}. Stopping optimization.")
+                break
+            # Early stopping based on patience
+            if len(self.oracle.history) >= 100:
+                new_score = np.mean(self.population_scores)
+                if (new_score - old_score) < 1e-3:
+                    no_improve_gen += 1
+                    if no_improve_gen >= self.patience:
+                        print('convergence criteria met, abort ...... ')
+                        break
+                else:
+                    no_improve_gen = 0
+                old_score = new_score
             
         # Get final results
         final_population = [
             (mol_to_smiles(mol), score) 
             for mol, score in zip(self.population_mol, self.population_scores)
         ]
+        import json
+        metrics_dir = os.path.join(self.output_dir, "optimizition_results")
+        os.makedirs(metrics_dir, exist_ok=True) 
+        output_file = os.path.join(
+            metrics_dir,
+            f"results_{self.oracle_name}_{self.model_name.replace('/', '_') if self.model_name else 'random'}_{self.seed}.json"
+        )
         
+        with open(output_file, 'w') as f:
+            json.dump(self.oracle.history, f, indent=2)
+        print(f"\nResults saved to: {output_file}")
         return {
             "best_molecule": best_molecules[-1],
             "best_score": best_scores[-1],
             "best_scores_history": best_scores,
             "best_molecules_history": best_molecules,
             "final_population": final_population,
+            "top_k_auc": top_k_auc,
             "oracle_calls": self.oracle.call_count,
             "all_results": self.all_results,
         }
     
     # Compatibility method for mutation
-    def mutate(self, mol: Chem.Mol) -> Optional[Chem.Mol]:
+    def mutate(self, parent_mols, parent_scores, mutation_rate) -> Optional[Chem.Mol]:
         """Mutate molecule (for compatibility with original code)"""
         if self.use_llm_mutations:
-            return self._llm_mutate(mol)
+            return self._llm_mutate(parent_mols, parent_scores, mutation_rate)
         else:
-            return self._random_mutate(mol)
+            return self._random_mutate(parent_mols[0])
+
+def sanitize_smiles(smi):
+    """
+    Return a canonical smile representation of smi 
+
+    Parameters
+    ----------
+    smi : str
+        smile string to be canonicalized 
+
+    Returns
+    -------
+    mol (rdkit.Chem.rdchem.Mol) : 
+        RdKit mol object (None if invalid smile string smi)
+    smi_canon (string)          : 
+        Canonicalized smile representation of smi (None if invalid smile string smi)
+    conversion_successful (bool): 
+        True/False to indicate if conversion was  successful 
+    """
+    if smi == '':
+        return None
+    try:
+        mol = Chem.MolFromSmiles(smi, sanitize=True)
+        smi_canon = Chem.MolToSmiles(mol, canonical=True)
+        return smi_canon
+    except:
+        return None

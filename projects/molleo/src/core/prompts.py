@@ -11,7 +11,17 @@ sys.path.insert(0, project_root)
 
 from sde_harness.core import Prompt
 
-
+Property_description = {
+    "jnk3": "The JNK3 score measures the inhibitory ability of a molecule against c-Jun N-terminal kinase 3 (JNK3).",
+    "gsk3b": "The GSK3$\beta$ score measures a molecular\'s biological activity against Glycogen Synthase Kinase 3 Beta.",
+    "drd2": "The DRD2 score measures a molecule\'s biological activity against a biological target named the dopamine type 2 receptor (DRD2).",
+    "celecoxib_rediscovery": "The celecoxib rediscovery score measures the tanimoto similarity of a molecule to Celecoxib, a known drug.",
+    "sitagliptin_mpo": "The sitagliptin MPO score is calculated as the geometric mean of four component metrics: \
+    1. Tanimoto similarity to Sitagliptin, a known drug. \
+    2. Have similar Molecular logP to sitagliptin. \
+    3. Have similar Topological polar surface area (TPSA) to sitagliptin. \
+    4. Belong to the same molecular formula space as sitagliptin, i.e., they are isomers of C16H15F6N5O",
+}
 class MolecularPrompts:
     """Collection of prompts for molecular tasks"""
     
@@ -34,34 +44,22 @@ Requirements:
 2. Maintain similar molecular weight (±50 Da)
 3. Keep modifications reasonable and drug-like
 
-Output format:
-Return only the SMILES strings, one per line, without any additional text or explanations.
+In your response, please provide a concise rationale summarizing how to edit the molecule. You need to conclude your answer with the sentence below (replacing the placeholder with the SMILES of your proposed molecule):\n\n
+Based on the above analysis, the proposed molecule is: <box>Molecule SMILES</box>.
 """
 
     # Property optimization prompt
-    OPTIMIZATION_PROMPT = """You are an expert medicinal chemist optimizing molecules for specific properties.
+    OPTIMIZATION_PROMPT = """
+    I have molecules and their {target_property} scores. {Property_description}
 
-Current best molecules and their scores:
-{molecule_data}
+    {molecule_data}
 
-Target property: {target_property}
-Current best score: {best_score}
 
-Based on the structure-activity relationships observed, generate {num_molecules} new molecules that might have improved {target_property}.
+    Please propose a new molecule that have a higher {target_property} score. You can edit the molecules above or propose a new one based on your knowledge.
 
-Consider:
-1. What structural features correlate with high scores?
-2. How can you combine or modify these features?
-3. What novel modifications might improve the property?
-
-Requirements:
-- The new molecules should be drug-like and synthetically accessible
-- Each molecule should be structurally related to the parent molecules
-- Focus on improving the {target_property} score
-
-Output format:
-Return only valid SMILES strings, one per line, without explanations.
-If you want to highlight a particularly promising molecule, you can use: \box{{SMILES_HERE}}
+    Requirements:
+    - In your response, please provide a concise rationale summarizing how to achieve a high target score and then propose the molecule. You need to conclude your answer with the sentence below (replacing the placeholder with the SMILES of your proposed molecule):\n\n
+    Based on the above analysis, the proposed molecule is: <box>Molecule SMILES</box>.
 """
 
     # Multi-objective optimization prompt
@@ -76,8 +74,8 @@ Target properties and their importance:
 Generate {num_molecules} new molecules that balance all objectives.
 Consider trade-offs between properties and aim for Pareto-optimal solutions.
 
-Output format:
-Return only valid SMILES strings, one per line.
+In your response, please provide a concise rationale summarizing how to achieve a high target score and then propose the molecule. You need to conclude your answer with the sentence below (replacing the placeholder with the SMILES of your proposed molecule):\n\n
+Based on the above analysis, the proposed molecule is: <box>Molecule SMILES</box>.
 """
 
     # Analog generation prompt
@@ -107,17 +105,15 @@ Analogs:"""
     
     @staticmethod
     def get_optimization_prompt(molecule_data: str, 
-                              target_property: str,
-                              best_score: float,
-                              num_molecules: int = 10) -> Prompt:
+                              target_property: str) -> Prompt:
         """Create optimization prompt"""
+        property_description = Property_description.get(target_property, "")
         return Prompt(
             custom_template=MolecularPrompts.OPTIMIZATION_PROMPT,
             default_vars={
                 "molecule_data": molecule_data,
                 "target_property": target_property,
-                "best_score": best_score,
-                "num_molecules": num_molecules
+                "Property_description": property_description
             }
         )
     

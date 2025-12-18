@@ -25,16 +25,16 @@ def main():
         description="MolLEO - LLM-augmented evolutionary algorithm for molecular discovery",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Example usage:
-  # Single objective optimization with LLM
-  python cli.py single --oracle drd2 --model openai/gpt-4o-2024-08-06 --generations 20
-  
-  # Single objective optimization without LLM (random mutations only)
-  python cli.py single --oracle qed --model none --generations 20
-  
-  # Multi-objective optimization
-  python cli.py multi --max-obj logp qed --min-obj sa --model openai/gpt-4o-2024-08-06
-        """,
+        Example usage:
+        # Single objective optimization with LLM
+        python cli.py single --oracle drd2 --model openai/gpt-4o-2024-08-06 --generations 20
+        
+        # Single objective optimization without LLM (random mutations only)
+        python cli.py single --oracle qed --model none --generations 20
+        
+        # Multi-objective optimization
+        python cli.py multi --max-obj logp qed --min-obj sa --model openai/gpt-4o-2024-08-06
+                """,
     )
 
     # Subcommands
@@ -42,55 +42,55 @@ Example usage:
 
     # Common arguments
     common_args = argparse.ArgumentParser(add_help=False)
+
     common_args.add_argument(
         "--model",
         type=str,
         default="openai/gpt-4o-2024-08-06",
         help="Model name for LLM-guided mutations (e.g., openai/gpt-4o-2024-08-06, claude-3-opus-20240229). Use 'none' for random mutations only."
     )
+
     common_args.add_argument(
-        "--population-size", 
-        type=int, 
-        default=10,
-        help="Population size (default: 100)"
-    )
-    common_args.add_argument(
-        "--offspring-size",
+        "--patience",
         type=int,
-        default=20,
-        help="Offspring per generation (default: 200)"
+        default=5,
+        help="Early stopping patience (default: 5)"
     )
     common_args.add_argument(
-        "--generations",
+        "--max-oracle-calls",
+        dest="max_oracle_calls",
         type=int,
-        default=3,
-        help="Number of generations (default: 20)"
+        default=10000,
+        help="Maximum number of oracle calls / evaluations (default: 10000)"
     )
     common_args.add_argument(
-        "--mutation-rate",
-        type=float,
-        default=0.01,
-        help="Mutation probability (default: 0.01)"
-    )
-    common_args.add_argument(
-        "--initial-size",
+        "--freq-log",
+        dest="freq_log",
         type=int,
-        default=20,
-        help="Number of initial molecules (default: 20)"
-    )
-    common_args.add_argument(
-        "--seed",
-        type=int,
-        nargs="+",
-        default=[0],
-        help="Random seed(s) (default: 0)"
+        default=100,
+        help="Logging frequency in steps/iterations (default: 100)"
     )
     common_args.add_argument(
         "--output-dir",
         type=str,
-        default="results",
+        default="./test_resultss",  
         help="Output directory for results (default: results)"
     )
+
+    common_args.add_argument(
+        "--n-jobs",
+        dest="n_jobs",
+        type=int,
+        default=-1,
+        help="Number of parallel jobs, -1 means all cores (default: -1)"
+    )
+
+    common_args.add_argument("--population-size", type=int, default=120, help="Population size (default: 100)")
+    common_args.add_argument("--offspring-size", type=int, default=70, help="Offspring per generation (default: 200)")
+    common_args.add_argument("--generations", type=int, default=150, help="Number of generations (default: 20)")
+    common_args.add_argument("--mutation-rate", type=float, default=0.067, help="Mutation probability (default: 0.01)")
+    common_args.add_argument("--initial-size", type=int, default=120, help="Number of initial molecules (default: 20)")
+    common_args.add_argument("--seed", type=int, nargs="+", default=[0], help="Random seed(s) (default: 0)")
 
     # Single objective mode
     single_parser = subparsers.add_parser(

@@ -73,3 +73,5 @@ class MolecularOracle(Oracle):
         """Reset oracle state"""
         self.call_count = 0
         self.history = []
+    def in_history(self, new_input):
+        return any(h["input"] == new_input for h in self.history)

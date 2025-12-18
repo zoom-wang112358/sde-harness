@@ -33,7 +33,7 @@ def demo_single_objective():
     class Args:
         oracle = "qed"
         mol_lm = "GPT-4"
-        model = "openai/gpt-4o-mini"
+        model = "openai/gpt-5-mini"
         population_size = 20
         offspring_size = 40
         generations = 3

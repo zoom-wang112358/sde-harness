@@ -10,7 +10,8 @@ project_root = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 )
 sys.path.insert(0, project_root)
-
+import random
+import numpy as np
 from sde_harness.core import Workflow
 from ..core import MolLEOOptimizer
 from ..oracles import TDCOracle
@@ -71,26 +72,34 @@ def run_single_objective(args) -> Dict[str, Any]:
             data = MolGen(name='zinc')
             # Get some molecules
             df = data.get_data()
+            random.seed(args.seed)
+            np.random.seed(args.seed)
             if len(df) > 0:
                 # Add some molecules from TDC
-                default_molecules = df.sample(n=min(10, len(df)))['smiles'].tolist()
+                default_molecules_from_tdc = df.sample(n=min(args.population_size, len(df)))['smiles'].tolist()
                 print(f"Successfully loaded {len(default_molecules)} molecules from TDC")
         except Exception as e:
             print(f"TDC sampling failed: {e}")
             print("Using default molecules...")
             
-        initial_smiles = default_molecules[:args.initial_size]
+        initial_smiles = default_molecules_from_tdc + default_molecules
         
     print(f"Starting with {len(initial_smiles)} initial molecules")
     
     # Create optimizer
     optimizer = MolLEOOptimizer(
         oracle=oracle,
+        oracle_name=args.oracle,
         population_size=args.population_size,
         offspring_size=args.offspring_size,
         mutation_rate=args.mutation_rate,
         n_jobs=args.n_jobs if hasattr(args, 'n_jobs') else -1,
         model_name=args.model,
+        freq_log=args.freq_log if hasattr(args, 'freq_log') else 100,
+        max_oracle_calls=args.max_oracle_calls if hasattr(args, 'max_oracle_calls') else 10000,
+        patience=args.patience if hasattr(args, 'patience') else 5,
+        seed=args.seed,
+        output_dir = args.output_dir,
         use_llm_mutations=bool(args.model) if hasattr(args, 'model') else False
     )
     
@@ -104,16 +113,18 @@ def run_single_objective(args) -> Dict[str, Any]:
     print("\n📊 Optimization Results:")
     print(f"Best molecule: {results['best_molecule']}")
     print(f"Best score: {results['best_score']:.4f}")
+    print(f"Top-10 AUC: {results['top_k_auc']:.4f}")
     print(f"Total oracle calls: {results['oracle_calls']}")
     
     # Save results
     if hasattr(args, 'output_dir') and args.output_dir:
         import json
+        metrics_dir = os.path.join(args.output_dir, "metrics")
+        os.makedirs(metrics_dir, exist_ok=True) 
         output_file = os.path.join(
-            args.output_dir, 
+            metrics_dir,
             f"results_{args.oracle}_{args.model.replace('/', '_') if args.model else 'random'}_{args.seed}.json"
         )
-        os.makedirs(args.output_dir, exist_ok=True)
         
         with open(output_file, 'w') as f:
             json.dump(results, f, indent=2)

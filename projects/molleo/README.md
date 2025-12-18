@@ -18,8 +18,7 @@ You need to get an OpenAI API key for GPT-4. BioT5 is an open-source language mo
 
 ### Package Installation
 ```bash
-conda create -n molleo python=3.9
-conda activate molleo
+conda activate sde-harness
 conda install pytorch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 pytorch-cuda=12.1 -c pytorch -c nvidia
 pip install PyTDC 
 pip install PyYAML

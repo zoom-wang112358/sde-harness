@@ -20,14 +20,14 @@ def crossover(mol1: Chem.Mol, mol2: Chem.Mol) -> Optional[Chem.Mol]:
     return co.crossover(mol1, mol2)
 
 
-def mutate(mol: Chem.Mol, mutation_rate: float, mol_lm=None) -> Optional[Chem.Mol]:
+def mutate(parent_mols, parent_scores, mutation_rate: float, mol_lm=None) -> Optional[Chem.Mol]:
     """Perform mutation on a molecule"""
     # If mol_lm is provided and has a mutate method (MolLEOOptimizer), use it
     if mol_lm is not None and hasattr(mol_lm, 'mutate'):
-        return mol_lm.mutate(mol)
+        return mol_lm.mutate(parent_mols, parent_scores, mutation_rate)
     else:
         # Use original mutation without LLM
-        return mu.mutate(mol, mutation_rate, None)
+        return mu.mutate(parent_mols[0], mutation_rate, None)
 
 
 def make_mating_pool(population_mol: List[Chem.Mol], 
@@ -85,58 +85,21 @@ def make_mating_pool(population_mol: List[Chem.Mol],
     
     return mating_tuples
 
-
 def reproduce(mating_tuples: List[Tuple[float, Chem.Mol]], 
               mutation_rate: float, 
               mol_lm=None,
               net=None) -> Tuple[Optional[Chem.Mol], Optional[Chem.Mol]]:
-    """
-    Reproduce new molecules from mating pool
-    
-    Args:
-        mating_tuples: List of (score, mol) tuples
-        mutation_rate: Probability of mutation
-        mol_lm: Language model for guided mutation
-        net: Neural network model (optional)
-        
-    Returns:
-        Tuple of (crossover child, mutated child)
-    """
-    # Select two parents randomly
-    parent1 = random.choice(mating_tuples)
-    parent2 = random.choice(mating_tuples)
-    
-    parent_mols = [parent1[1], parent2[1]]
-    
-    # Debug: Print parent SMILES
-    parent1_smiles = Chem.MolToSmiles(parent1[1])
-    parent2_smiles = Chem.MolToSmiles(parent2[1])
-    print(f"DEBUG: Parents - {parent1_smiles} x {parent2_smiles}")
-    
-    # Perform crossover
-    new_child = crossover(parent_mols[0], parent_mols[1])
-    
-    # Debug: Print crossover result
-    if new_child is not None:
-        child_smiles = Chem.MolToSmiles(new_child)
-        print(f"DEBUG: Crossover successful - {child_smiles}")
-    else:
-        print(f"DEBUG: Crossover failed")
-    
-    # Perform mutation if crossover succeeded
-    new_child_mutation = None
-    if new_child is not None:
-        new_child_mutation = mutate(new_child, mutation_rate, mol_lm)
-        
-        # Debug: Print mutation result
-        if new_child_mutation is not None:
-            mutation_smiles = Chem.MolToSmiles(new_child_mutation)
-            print(f"DEBUG: Mutation successful - {mutation_smiles}")
-        else:
-            print(f"DEBUG: Mutation failed")
-        
-    return new_child, new_child_mutation
+    parent = [random.choice(mating_tuples), random.choice(mating_tuples)]
 
+    parent_mols = [parent[0][1], parent[1][1]]
+
+    parent1_smiles = Chem.MolToSmiles(parent[0][1])
+    parent2_smiles = Chem.MolToSmiles(parent[1][1])
+    parent1_score = parent[0][0]
+    parent2_score = parent[1][0]
+    parent_scores = [parent1_score, parent2_score]
+    new_child_crossover = mutate(parent_mols, parent_scores, mutation_rate, mol_lm)
+    return new_child_crossover
 
 def get_best_mol(population_scores: List[float], 
                  population_mol: List[Chem.Mol]) -> str:

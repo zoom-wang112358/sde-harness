@@ -123,6 +123,7 @@ workflow_results = workflow.run_sync(
 - `example_no_llm.py` - Example using only random mutations
 - `example_with_llm.py` - Example with LLM mutations
 - `example_comprehensive.py` - Comprehensive test scenarios
+- `example_results.py` - Example usage on single objective optimization tasks
 
 ## Configuration
 
@@ -156,6 +157,20 @@ molleo/
 ├── example_usage.py     # Usage examples
 └── _archive/            # Old implementation (reference only)
 ```
+## Results
+
+Comparison of different methods on molecule optimization:
+
+| Method | jnk3 AUC Top 10 | jnk3 Avg Top 10 | gsk3β AUC Top 10 | gsk3β Avg Top 10 |
+|---|---:|---:|---:|---:|
+| Graph GA | 0.548 | 0.890 | 0.779 | 0.945 |
+| REINVENT | 0.794 | 0.912 | 0.868 | 0.978 |
+| gpt-4o | 0.796 | 0.932 | 0.857 | 0.972 |
+| gpt-5-chat | 0.717 | 0.803 | 0.832 | 0.887 |
+| gpt-5 | 0.695 | 0.752 | 0.822 | 0.942 |
+| claude-sonnet-4.5 | 0.865 | 0.935 | 0.981 | 1.00 |
+| deepseek-R1 | 0.749 | 0.932 | 0.849 | 0.893 |
+
 
 ## Key Improvements in Restructured Version
 
@@ -189,3 +204,17 @@ If you're migrating from the original MolLEO:
 2. Use full model names (e.g., `openai/gpt-4o-2024-08-06`) instead of shortcuts
 3. All old code is preserved in `/_archive/` for reference
 4. The new structure is fully backward-compatible with the same optimization algorithms
+
+## Citation
+If you find our work helpful, please consider citing our paper:
+
+```
+@inproceedings{
+      wang2025efficient,
+      title={Efficient Evolutionary Search Over Chemical Space with Large Language Models},
+      author={Haorui Wang and Marta Skreta and Cher Tian Ser and Wenhao Gao and Lingkai Kong and Felix Strieth-Kalthoff and Chenru Duan and Yuchen Zhuang and Yue Yu and Yanqiao Zhu and Yuanqi Du and Alan Aspuru-Guzik and Kirill Neklyudov and Chao Zhang},
+      booktitle={The Thirteenth International Conference on Learning Representations},
+      year={2025},
+      url={https://openreview.net/forum?id=awWiNvQwf3}
+}
+```
